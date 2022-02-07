@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>VaporRacer</title>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+    />
+
+    <link type="text/css" rel="stylesheet" href="./main.css" />
+
+    <link rel="icon" href="../Assets/favicon.ico">
+
+    <style>
+      @font-face {
+        font-family: digital_font;
+        src: url(../Assets/Font/font.ttf);
+      }
+
+      body {
+        background-color: #efd1b5;
+        font-family: "digital_font";
+        color: #61443e;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="message"></div>
+
+    <div id="container"></div>
+
+    <script type="module">
+      import * as THREE from "/three.js/build/three.module.js";
+
+      import { GLTFLoader } from "../three.js/Utilities/GLTFLoader.js";
+      import { ImprovedNoise } from "../three.js/Utilities/ImprovedNoise.js";
+      import Stats from "../three.js/Utilities/stats.module.js";
+
+      import { EffectComposer } from "../three.js/Shaders_Postprocessing/postprocessing/EffectComposer.js";
+      import { RenderPass } from "../three.js/Shaders_Postprocessing/postprocessing/RenderPass.js";
+      import { UnrealBloomPass } from "../three.js/Shaders_Postprocessing/postprocessing/UnrealBloomPass.js";
+      import { ShaderPass } from "../three.js/Shaders_Postprocessing/postprocessing/ShaderPass.js";
+
+      import Dash from "./dash.js";
+      import Menu from "./menu.js";
+      import Scenery from "./scenery.js";
+      import Hyperdrive from "./hyperdrive.js";
+      import Obstacles from "./obstacles.js";
+      import Car from "./car.js";
+
+      let container;
+      let camera, scene, renderer;
+
+      // For postprocessing
+      var composer;
+
+      // Utility
+      var last_time;
+      var score = 0;
+
+      // Car meshes
+      var car_mesh, smashed_car_mesh, engine_mesh;
+
+      // Obstacles/scenery
+      var planet_meshes = [];
+      var asteroid_mesh;
+      var meshes_loaded = false;
+
+      // For game over/hit
+      var game_over = false;
+
+      // For other camera mode
+      var car_front_camera = false;
+      var current_camera_y = 1000;
+      var current_camera_z = 0;
+
+      var car_cam_y_offset = 250;
+
+      var car_cam_x_rotation_offset = 0;
+      var car_cam_y_rotation_offset = 0;
+
+      // For sound
+      var listener,
+        bg_music,
+        explosion,
+        hor_change,
+        ver_change,
+        hyper_start,
+        hyper_end,
+        hyper_during;
+      var music_started = false;
+
+      // For mouse controls
+      var mouse_controls = false;
+      //var stats;
+
+      // Object instances
+      var dash, menu, scenery, hyperdrive, obstacles, car;
+
+      var godmode = false; // For marker so they can see everything
+
+      // For postprocessing
+      var postprocessingEnabled = false;
+      var bloomPass, crtPass;
+
+      init();
+      animate();
+
+      /**
+       * Initialises the game, populates global variables and initialises
+       * everything that needs to be initialised for the game to run.
+       */
+      function init() {
+        // Add the event listeners
+        document.addEventListener("mousemove", onMouseMove, false);
+        document.addEventListener("mousedown", onMouseDown, false);
+        window.addEventListener("resize", onWindowResize);
+
+        // For FPS counter
+        // stats = Stats();
+        // document.body.appendChild(stats.dom);
+
+        // Get container
+        container = document.getElementById("container");
+
+        // Initialise scene
+        scene = new THREE.Scene();
+        scene.fog = new THREE.FogExp2(0xe98c00, 0.00003);
+
+        loadMeshes();
+
+        // Initialise the dash
+        dash = new Dash();
+        dash.initialise(scene);
+
+        // Initialise the menu
+        menu = new Menu();
+        menu.initialise(scene);
+
+        // Define the renderer
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        container.appendChild(renderer.domElement);
+
+        // Composer for postprocessing
+        const canvas = renderer.domElement;
+        composer = new EffectComposer(renderer);
+        composer.setSize(canvas.width, canvas.height);
+
+        // Define the camera
+        camera = new THREE.PerspectiveCamera(
+          60,
+          window.innerWidth / window.innerHeight,
+          1,
+          50000
+        );
+        camera.position.set(0, current_camera_y, current_camera_z);
+        camera.aspect = canvas.clientWidth / canvas.clientHeight;
+        camera.lookAt(0, 950, -5000);
+
+        // create an AudioListener and add it to the camera
+        listener = new THREE.AudioListener();
+        camera.add(listener);
+
+        initialiseAudio();
+
+        // initialise obstacles
+        obstacles = new Obstacles();
+
+        // Initiralise hyperdrive
+        hyperdrive = new Hyperdrive();
+        hyperdrive.initialise(scene);
+
+        // Initialise the scenery
+        scenery = new Scenery();
+        scenery.initialise(scene, camera);
+
+        // Initialise the player
+        car = new Car();
+        car.initialise(scene);
+
+        // Initialise postprocessing
+        initialisePostProcessing();
+
+        // Define the keyboard controls
+        keyControls();
+
+        // Load the background and apply it to the scene
+        const loader_bg = new THREE.TextureLoader();
+        const bgTexture = loader_bg.load(
+          "../Assets/Images/background.jpg"
+        );
+        scene.background = bgTexture;
+
+        // Set the beginning time for mode changes
+        last_time = Math.round(new Date().getTime() / 1000);
+      }
+
+      /**
+       * Function that handles the animation and movement of objects.
+       */
+      function animate() {
+        //stats.update();
+
+        // Get the animation frame
+        requestAnimationFrame(animate);
+
+        if (!menu.isPaused()) {
+          if (!menu.isActive() || game_over) {
+            if (!meshes_loaded) {
+              // Ensure meshes loaded
+              meshes_loaded = obstacles.initialiseAsteroids(
+                scene,
+                asteroid_mesh
+              );
+              car.initialiseMeshes(car_mesh, smashed_car_mesh, engine_mesh);
+            }
+
+            // Update dash and camera positions
+            dash.update(
+              car.getSpeed(),
+              score,
+              car_mesh.position.x,
+              hyperdrive.getCurrentCharge(),
+              hyperdrive.getFullCharge()
+            );
+
+            camera.position.z = current_camera_z;
+
+            if (car_front_camera) {
+              car_cam_x_rotation_offset =
+                car_cam_y_offset * Math.cos(car_mesh.rotation.z + Math.PI / 2);
+              car_cam_y_rotation_offset =
+                car_cam_y_offset * Math.sin(car_mesh.rotation.z + Math.PI / 2);
+
+              camera.position.x =
+                car_mesh.position.x + car_cam_x_rotation_offset;
+              camera.position.y =
+                car_mesh.position.y + car_cam_y_rotation_offset;
+            } else {
+              camera.position.x = car_mesh.position.x;
+              camera.position.y = current_camera_y;
+
+              if (current_camera_y == 1000 && current_camera_z == 0) {
+                camera.lookAt(camera.position.x, 950, -5000);
+              }
+            }
+
+            if (!game_over) { // Game in progress
+              // Move the buttons backwards if the game is in progress
+              menu.moveOut();
+              dash.updateStatus(obstacles.getCurrentStatus());
+
+              if (hyperdrive.isActive()) { // In hyperdrive
+                car.setSpeed(
+                  hyperdrive.iterate(car_mesh, camera, car.getSpeed(), composer)
+                );
+
+                if (car.getSpeed() < 2500) { // Hyperdrive ended
+                  if (!car_front_camera) dash.show();
+
+                  hyper_end.play();
+                  hyper_during.stop();
+                  car.moveTo(375);
+                }
+
+                car.verticalMovement();
+              } else { // Not in hyperdrive
+                camera.lookAt(camera.position.x, 950, -5000);
+
+                car.move();
+
+                if (!godmode && car.collisionDetection(obstacles) && !game_over)
+                  gameOver();
+
+                obstacles.move(
+                  car.getSpeed(),
+                  scene,
+                  asteroid_mesh,
+                  planet_meshes
+                );
+
+                // Sync camera rotation with car rotation
+                if (car_front_camera) {
+                  camera.rotation.x = car_mesh.rotation.x;
+                  camera.rotation.y = car_mesh.rotation.y;
+                  camera.rotation.z = car_mesh.rotation.z;
+                }
+              }
+
+              car.rearParticles();
+              scenery.move(scene, car.getSpeed());
+
+              last_time = obstacles.modeChanges(last_time, hyperdrive);
+
+              score += car.getSpeed() / 1000; // Increment score
+            } else if (game_over) { // Game not in progress
+              obstacles.rotateObjects();
+              menu.moveIn();
+              car.afterHitPhysics();
+            }
+          }
+
+          // Continues moving comets if game ends
+          if (game_over && obstacles.getMode() == 2 && obstacles.mode_began)
+            obstacles.move(
+              car.getEndSpeed(),
+              scene,
+              asteroid_mesh,
+              planet_meshes
+            );
+        }
+
+        composer.render();
+      }
+
+      /**
+       * The function called every time there is a mouse movement, used
+       * to move the car when the player has activated mouse controls.
+       */
+      function onMouseMove(event) {
+        menu.updateMouse(event);
+
+        if (
+          !game_over &&
+          !menu.isPaused() &&
+          !hyperdrive.isActive() &&
+          mouse_controls
+        ) {
+          var x = (event.clientX / window.innerWidth) * 2 - 1;
+          var y = -(event.clientY / window.innerHeight) * 2 + 1;
+
+          var col = Math.floor(3 * (x / 2 + 0.5));
+          var row = Math.floor(2 * (y / 2 + 0.5));
+
+          var position = car.getPosition();
+
+          if (!car.isChangingLane()) {
+            if (position[0] < col && car.moveRight()) {
+              hor_change.play();
+            } else if (position[0] > col && car.moveLeft()) {
+              hor_change.play();
+            }
+          }
+
+          if (car.isChangingLane()) {
+            if (col == 2 && position[0] == 1) {
+              car.moveRight();
+            } else if (col == 0 && position[0] == 1) {
+              car.moveLeft();
+            }
+          }
+
+          if (!car.isChangingHeight()) {
+            if (position[1] > row && car.moveDown()) {
+              ver_change.play();
+              if (car_front_camera) current_camera_y += car.getHeightSep();
+            }
+
+            if (position[1] < row && car.moveUp()) {
+              ver_change.play();
+              if (car_front_camera) current_camera_y += car.getHeightSep();
+            }
+          }
+        }
+      }
+
+      /**
+       * This is the function called every time there is a mouse press.
+       */
+      function onMouseDown(event) {
+        var pressed = menu.checkForPress(camera);
+
+        if (pressed == "Start" && !menu.isPaused()) {
+          menu.setActive(false);
+
+          last_time = Math.round(new Date().getTime() / 1000);
+
+          hyperdrive.clearCharge();
+
+          // If the game was over, restart it
+          if (game_over) reset();
+        } else if (pressed == "Postprocessing"){
+          togglePostProcessing();
+        }
+      }
+
+      /**
+       * Function that is called every time the size of the window changes.
+       */
+      function onWindowResize() {
+        // Reset the camera
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+
+        // Set the renderer size to the new size
+        renderer.setSize(window.innerWidth, window.innerHeight);
+
+        // Reset the HTML dash text and dash
+        dash.resetText();
+        dash.update(car.getSpeed(), score, car_mesh.position.x);
+      }
+
+      /**
+       * Sets up the keyboard controls available to the user.
+       */
+      function keyControls() {
+        document.onkeydown = function (e) {
+          switch (e.keyCode) {
+            case 37: // Move left
+              if (
+                !hyperdrive.isActive() &&
+                car.moveLeft() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+              )
+                hor_change.play();
+              break;
+            case 39: // Move right
+              if (
+                !hyperdrive.isActive() &&
+                car.moveRight() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+              )
+                hor_change.play();
+              break;
+            case 38: // Move up
+              if (
+                !hyperdrive.isActive() &&
+                car.moveUp() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+              ) {
+                ver_change.play();
+                if (car_front_camera) current_camera_y += car.getHeightSep();
+              }
+              break;
+            case 40: // Move down
+              if (
+                !hyperdrive.isActive() &&
+                car.moveDown() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+              ) {
+                ver_change.play();
+                if (car_front_camera) current_camera_y -= car.getHeightSep();
+              }
+              break;
+            case 67: // Camera change
+              if (
+                !game_over &&
+                !hyperdrive.isActive() &&
+                !menu.isActive() &&
+                !menu.isPaused()
+              ) {
+                car_front_camera = !car_front_camera;
+
+                if (!car_front_camera) {
+                  switchToOverheadView();
+                } else {
+                  switchToBonnetView();
+                }
+              }
+              break;
+            case 32: // Enter hyperdrive
+              if (
+                !game_over &&
+                hyperdrive.getCurrentCharge() == hyperdrive.getFullCharge() &&
+                !menu.isPaused() &&
+                !hyperdrive.isActive() &&
+                !car.isChangingHeight() &&
+                !car.isChangingLane()
+              ) {
+                car.moveTo(1000);
+
+                hyperdrive.start(composer, car_mesh.position, car.getSpeed());
+
+                obstacles.moveOutOfView();
+
+                hyper_start.play();
+                hyper_during.play();
+
+                dash.hide();
+                car.setSpeed(2500);
+              } else if ((game_over || score == 0) && !menu.isPaused()) {
+                menu.setActive(false);
+
+                hyperdrive.clearCharge();
+
+                // If the game was over, restart it
+                if (game_over) reset();
+              }
+
+              break;
+            case 77: // Mouse controls (m key)
+              mouse_controls = !mouse_controls;
+              break;
+            case 71: // Key controls (k key)
+              godmode = !godmode;
+              break;
+            case 27: // pause menu
+              last_time = menu.togglePauseMenu(
+                composer,
+                last_time,
+                hyperdrive.isActive(),
+                car_mesh.position.x
+              );
+
+              if (menu.isPaused()) {
+                hyper_during.pause();
+              } else if (!menu.isPaused() && hyperdrive.isActive()) {
+                hyper_during.play();
+              }
+          }
+        };
+      }
+
+      /**
+       * Changes the camera to the overhead view.
+       */
+      function switchToOverheadView() {
+        dash.show();
+        car_front_camera = false;
+
+        camera.rotation.x = 0;
+        camera.rotation.y = 0;
+        camera.rotation.z = 0;
+
+        current_camera_z = 0;
+        current_camera_y = 1000;
+      }
+
+      /**
+       * Changes the camera to the bonnet view.
+       */
+      function switchToBonnetView() {
+        dash.hide();
+        car_front_camera = true;
+
+        current_camera_z = -2950;
+        current_camera_y = car_mesh.position.y + car_cam_y_offset;
+      }
+
+      /**
+       * Initialises the background track and sounds used by the game.
+       */
+      function initialiseAudio() {
+        const audioLoader = new THREE.AudioLoader();
+
+        // Define the global audio sources
+        explosion = loadAudio(audioLoader, "../Assets/Sounds/explosion.mp3", 0.5);
+        hor_change = loadAudio(audioLoader, "../Assets/Sounds/hor_change.wav", 0.01);
+        ver_change = loadAudio(audioLoader, "../Assets/Sounds/vert_change.wav", 0.3);
+        hyper_end = loadAudio(audioLoader, "../Assets/Sounds/start_teleport.mp3", 0.1);
+        hyper_start = loadAudio(audioLoader, "../Assets/Sounds/end_teleport.mp3", 0.1);
+        hyper_during = loadAudio(audioLoader, "../Assets/Sounds/hyperdrive_during.wav", 0.01);
+
+        // Load backtrack and set it as the Audio object's buffer
+        bg_music = new THREE.Audio(listener);
+
+        audioLoader.load("../Assets/Sounds/music.wav", 
+          function (buffer) {
+            bg_music.setBuffer(buffer);
+            bg_music.setLoop(true);
+            bg_music.setVolume(1.5);
+            bg_music.play();
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
+        music_started = true;
+      }
+
+      /**
+       * Loads audio file at path and returns THREE.Audio
+       */
+      function loadAudio(loader, path, volume){
+        var audio = new THREE.Audio(listener);
+
+        // Load explosion sound effect
+        loader.load(
+          path,
+          function (buffer) {
+            audio.setBuffer(buffer);
+            audio.setVolume(volume);
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
+        return audio;
+      }
+
+      /**
+       * Resets the game to its initial state after player loses.
+       */
+      function reset() {
+        // Clear existing objects from the scene
+        obstacles.reset(scene);
+
+        // Reset global variables
+        hyperdrive.setActive(false);
+        hyperdrive.clearCharge();
+
+        car.reset(scene);
+
+        score = 0;
+
+        game_over = false;
+
+        // Reset the camera
+        if (!car_front_camera) {
+          current_camera_z = 0;
+          current_camera_y = 1000;
+        } else {
+          current_camera_z = -2950;
+          current_camera_y = car_mesh.position.y + car_cam_y_offset;
+        }
+
+        // Reset the button positions
+        menu.setButtonsX(0);
+
+        // Reinitialise needed objects
+        obstacles.initialiseAsteroids(scene, asteroid_mesh);
+
+        // Reset time
+        last_time = Math.round(new Date().getTime() / 1000);
+      }
+
+      /**
+       * Indicates that the player has hit an obstacles and the game
+       * needs to end.
+       */
+      function gameOver() {
+        // Ensure hyper drive is exited
+        if (hyperdrive.isActive()) {
+          if (!car_front_camera) dash.show();
+          car_speed = hyperdrive.end(composer);
+          hyper_end.play();
+          hyper_during.stop();
+        }
+
+        // Play explosion sound effect
+        explosion.play();
+
+        // Indicate the game is over
+        game_over = true;
+        dash.updateStatus("GAME OVER");
+
+        car.hit(scene);
+
+        // Switch to overhead camera view
+        if (car_front_camera) switchToOverheadView();
+
+        // Set the button positions depending on camera type
+        if (!car_front_camera) {
+          menu.setButtonsX(camera.position.x);
+        } else {
+          menu.setButtonsX(0);
+        }
+
+        menu.setActive(true);
+      }
+
+      /**
+       * Initialises the post processing used by the game.
+       */
+      function initialisePostProcessing() {
+        // Add the render to the composer
+        composer.addPass(new RenderPass(scene, camera));
+
+        // Configure bloom pass
+        bloomPass = new UnrealBloomPass(
+          10, 0.75, 1, 0.6);
+
+        // Initialise the crt shader
+        const crtShader = {
+          uniforms: {
+            tDiffuse: { value: null },
+          },
+          vertexShader: `
+            varying vec2 vUv;
+
+            void main() {
+                vUv = uv;
+                gl_Position = projectionMatrix * 
+									modelViewMatrix * vec4(position, 1);
+            }
+            `,
+          fragmentShader: `
+            #define SCAN_LINE_DENSITY 1000.0
+
+            varying vec2 vUv; // From vertex shader
+
+            uniform sampler2D tDiffuse;
+
+            void main() {
+                // Curve amounts for x and y
+                vec2 curve = vec2(0.2, 0.4); 
+
+                // Distances from the center
+                vec2 distances = vec2(abs(0.5 - vUv.x), 
+                    abs(0.5 - vUv.y));
+
+                // Square the distances to smooth the edges
+                distances *= distances;
+
+                // Modifiable vUv
+                vec2 vUv_copy = vec2(vUv.x, vUv.y);
+
+                // Apply the curvature
+                vUv_copy.x -= 0.5;
+                vUv_copy.x *= 1.0 + (distances.y * curve.x);
+                vUv_copy.x += 0.5;
+
+                vUv_copy.y -= 0.5;
+                vUv_copy.y *= 1.0 + (distances.x * curve.y);
+                vUv_copy.y += 0.5;
+
+                // Get texture pixel
+                vec4 tex_pixel = texture2D(tDiffuse, 
+                    vec2(vUv_copy.x, vUv_copy.y));
+
+                // Add scanline
+                tex_pixel.rgb += 0.025 * sin(vUv_copy.y * SCAN_LINE_DENSITY);
+
+                /* Cut off the corners by setting corners to black 
+                if not in range */
+                if(vUv_copy.x > 1.0 || vUv_copy.y > 1.0 || 
+                  vUv_copy.x < 0.0 || vUv_copy.y < 0.0)
+                    tex_pixel = vec4(0.0);
+
+                gl_FragColor = tex_pixel;
+              }
+              `,
+        };
+
+        crtPass = new ShaderPass(crtShader);
+      }
+
+       /**
+       * Enables/disables postprocessing effects.
+       */
+       function togglePostProcessing(){
+        hyperdrive.togglePostprocessing();
+        menu.togglePostprocessing();
+
+        if (postprocessingEnabled){
+          composer.removePass(bloomPass);
+          composer.removePass(crtPass);
+          postprocessingEnabled = false;
+        } else {
+          composer.addPass(bloomPass);
+          composer.addPass(crtPass);
+          postprocessingEnabled = true;
+        }
+      }
+
+      /**
+       * Use GLTFLoader to load meshes for the obejcts used in the game.
+       */
+      function loadMeshes() {
+        const modelLoader = new GLTFLoader();
+        const textureLoader = new THREE.TextureLoader();
+
+        // Load the car mesh
+        modelLoader.load(
+          "../Assets/Models/car.glb",
+          function (gltf) {
+            car_mesh = gltf.scene.children.find(
+              (child) => child.name === "Car"
+            );
+            car_mesh.scale.set(
+              car_mesh.scale.x * 200,
+              car_mesh.scale.y * 200,
+              car_mesh.scale.z * 200
+            );
+            car_mesh.position.y = 375;
+            car_mesh.position.z = 1000;
+            car_mesh.name = "Car_mesh";
+
+            scene.add(car_mesh);
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
+        // Load the asteroid mesh
+        modelLoader.load(
+          "../Assets/Models/asteroid.glb",
+          function (gltf) {
+            asteroid_mesh = gltf.scene.children.find(
+              (child) => child.name === "Asteroid"
+            );
+            var scale = 150;
+            asteroid_mesh.scale.set(
+              asteroid_mesh.scale.x * scale,
+              asteroid_mesh.scale.y * scale,
+              asteroid_mesh.scale.z * scale
+            );
+            asteroid_mesh.name = "Asteroid Mesh";
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
+        // Load the smashed car mesh
+        modelLoader.load(
+          "../Assets/Models/smashed.glb",
+          function (gltf) {
+            smashed_car_mesh = gltf.scene.children.find(
+              (child) => child.name === "Car"
+            );
+            smashed_car_mesh.scale.set(
+              smashed_car_mesh.scale.x * 200,
+              smashed_car_mesh.scale.y * 200,
+              smashed_car_mesh.scale.z * 200
+            );
+            smashed_car_mesh.visible = false;
+            smashed_car_mesh.name = "Smashed Car Mesh";
+            smashed_car_mesh.position.z = 10000;
+
+            scene.add(smashed_car_mesh);
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
+        // Load the car engine mesh
+        modelLoader.load(
+          "../Assets/Models/engine.glb",
+          function (gltf) {
+            engine_mesh = gltf.scene.children.find(
+              (child) => child.name === "Engine"
+            );
+            engine_mesh.scale.set(
+              engine_mesh.scale.x * 200,
+              engine_mesh.scale.y * 200,
+              engine_mesh.scale.z * 200
+            );
+            engine_mesh.name = "Engine Mesh";
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
+        // Load the un-ringed planet meshes with bumpmaps
+        var bumpmap_planet_list = [
+          "mercury",
+          "venus",
+          "earth",
+          "earth",
+          "pluto",
+        ];
+        for (let i = 0; i < bumpmap_planet_list.length; i++) {
+          modelLoader.load(
+            "../Assets/Models/planet.glb",
+            function (gltf) {
+              const displacementMap = textureLoader.load(
+                "../Assets/Bumpmaps/" + bumpmap_planet_list[i] + ".jpg"
+              );
+              const map = textureLoader.load(
+                "../Assets/Textures/" + bumpmap_planet_list[i] + ".jpg"
+              );
+
+              var mesh = gltf.scene.children.find(
+                (child) => child.name === "Planet"
+              );
+
+              mesh.position.x = -1;
+              var scale = 800;
+              mesh.scale.set(
+                mesh.scale.x * scale,
+                mesh.scale.y * scale,
+                mesh.scale.z * scale
+              );
+
+              mesh.material.map = map;
+              mesh.material.displacementMap = displacementMap;
+              mesh.material.displacementScale = 0.1;
+
+              mesh.name = bumpmap_planet_list[i];
+              planet_meshes[i] = mesh;
+            },
+            undefined,
+            function (error) {
+              console.error(error);
+            }
+          );
+        }
+
+        // Load the planets without bumpmaps
+        var nonbumpmap_planet_list = ["neptune", "jupiter"];
+
+        for (let i = 0; i < nonbumpmap_planet_list.length; i++) {
+          modelLoader.load(
+            "../Assets/Models/" + nonbumpmap_planet_list[i] + ".glb",
+            function (gltf) {
+              var mesh = gltf.scene.children.find(
+                (child) => child.name === "Sphere"
+              );
+
+              mesh.position.x = -1;
+              var scale = 800;
+              mesh.scale.set(
+                mesh.scale.x * scale,
+                mesh.scale.y * scale,
+                mesh.scale.z * scale
+              );
+
+              mesh.name =
+                nonbumpmap_planet_list[i + bumpmap_planet_list.length];
+              planet_meshes[i + bumpmap_planet_list.length] = mesh;
+            },
+            undefined,
+            function (error) {
+              console.error(error);
+            }
+          );
+        }
+
+        // Load the ringed planet meshes
+        var planet_list_rings = ["saturn", "uranus"];
+        for (
+          let i = bumpmap_planet_list.length + nonbumpmap_planet_list.length;
+          i <
+          bumpmap_planet_list.length +
+            nonbumpmap_planet_list.length +
+            planet_list_rings.length;
+          i++
+        ) {
+          modelLoader.load(
+            "../Assets/Models/" +
+              planet_list_rings[
+                i - bumpmap_planet_list.length - nonbumpmap_planet_list.length
+              ] +
+              ".glb",
+            function (gltf) {
+              var mesh = gltf.scene.children.find(
+                (child) => child.name === "Sphere"
+              );
+              var scale = 800;
+              mesh.scale.set(
+                mesh.scale.x * scale,
+                mesh.scale.y * scale,
+                mesh.scale.z * scale
+              );
+              mesh.position.x = 0;
+              mesh.name =
+                planet_list_rings[
+                  i - bumpmap_planet_list.length - nonbumpmap_planet_list.length
+                ];
+              planet_meshes[i] = mesh;
+            },
+            undefined,
+            function (error) {
+              console.error(error);
+            }
+          );
+        }
+      }
+    </script>
+  </body>
+</html>
