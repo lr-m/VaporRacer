@@ -14,7 +14,7 @@ export default function Hyperdrive() {
 
 	this.particle_count = 100;
 
-	this.postprocessingEnabled = false;
+	this.postprocessingEnabled = true;
 
 	/**
 	 * Get a random number between 0 and 1.

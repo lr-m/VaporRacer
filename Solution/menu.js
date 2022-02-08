@@ -11,7 +11,7 @@ export default function Menu() {
 
 	this.lastTimeWhenPaused;
 
-	this.postprocessingEnabled = false;
+	this.postprocessingEnabled = true;
 
 	/**
 	 * Toggles the pause menu.
