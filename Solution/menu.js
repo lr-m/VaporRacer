@@ -1,5 +1,5 @@
-import * as THREE from "../three.js/build/three.module.js";
-import { ShaderPass } from "../three.js/Shaders_Postprocessing/postprocessing/ShaderPass.js";
+import * as THREE from "../three.js-dev/build/three.module.js";
+import { ShaderPass } from "../three.js-dev/examples/jsm/postprocessing/ShaderPass.js";
 
 export default function Menu() {
 	this.buttons = [];

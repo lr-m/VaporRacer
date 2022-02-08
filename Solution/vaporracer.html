@@ -30,17 +30,27 @@
 
     <div id="container"></div>
 
+    <body style="background-color:black;"></body>
+
+    <script type="importmap">
+			{
+				"imports": {
+					"three": "../three.js-dev/build/three.module.js"
+				}
+			}
+		</script>
+
     <script type="module">
-      import * as THREE from "/three.js/build/three.module.js";
+      import * as THREE from 'three';
 
-      import { GLTFLoader } from "../three.js/Utilities/GLTFLoader.js";
-      import { ImprovedNoise } from "../three.js/Utilities/ImprovedNoise.js";
-      import Stats from "../three.js/Utilities/stats.module.js";
+      import { GLTFLoader } from "../three.js-dev/examples/jsm/loaders/GLTFLoader.js";
+      import { ImprovedNoise } from "../three.js-dev/examples/jsm/math/ImprovedNoise.js";
+      import Stats from "../three.js-dev/examples/jsm/libs/stats.module.js";
 
-      import { EffectComposer } from "../three.js/Shaders_Postprocessing/postprocessing/EffectComposer.js";
-      import { RenderPass } from "../three.js/Shaders_Postprocessing/postprocessing/RenderPass.js";
-      import { UnrealBloomPass } from "../three.js/Shaders_Postprocessing/postprocessing/UnrealBloomPass.js";
-      import { ShaderPass } from "../three.js/Shaders_Postprocessing/postprocessing/ShaderPass.js";
+      import { EffectComposer } from "../three.js-dev/examples/jsm/postprocessing/EffectComposer.js";
+      import { RenderPass } from "../three.js-dev/examples/jsm/postprocessing/RenderPass.js";
+      import { UnrealBloomPass } from "../three.js-dev/examples/jsm/postprocessing/UnrealBloomPass.js";
+      import { ShaderPass } from "../three.js-dev/examples/jsm/postprocessing/ShaderPass.js";
 
       import Dash from "./dash.js";
       import Menu from "./menu.js";
@@ -93,7 +103,7 @@
 
       // For mouse controls
       var mouse_controls = false;
-      //var stats;
+      var stats;
 
       // Object instances
       var dash, menu, scenery, hyperdrive, obstacles, car;
@@ -101,7 +111,7 @@
       var godmode = false; // For marker so they can see everything
 
       // For postprocessing
-      var postprocessingEnabled = false;
+      var postprocessingEnabled = true;
       var bloomPass, crtPass;
 
       init();
@@ -118,8 +128,8 @@
         window.addEventListener("resize", onWindowResize);
 
         // For FPS counter
-        // stats = Stats();
-        // document.body.appendChild(stats.dom);
+        stats = Stats();
+        document.body.appendChild(stats.dom);
 
         // Get container
         container = document.getElementById("container");
@@ -196,13 +206,17 @@
 
         // Set the beginning time for mode changes
         last_time = Math.round(new Date().getTime() / 1000);
+
+        // Add postprocessing passes
+        composer.addPass(bloomPass);
+        composer.addPass(crtPass);
       }
 
       /**
        * Function that handles the animation and movement of objects.
        */
       function animate() {
-        //stats.update();
+        stats.update();
 
         // Get the animation frame
         requestAnimationFrame(animate);

@@ -1,4 +1,4 @@
-import * as THREE from "/three.js/build/three.module.js";
+import * as THREE from "../three.js-dev/build/three.module.js";
 
 export default function Obstacles() {
   // Obstacles/scenery
