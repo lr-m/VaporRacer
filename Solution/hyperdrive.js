@@ -1,5 +1,5 @@
-import * as THREE from "../three.js-dev/build/three.module.js";
-import { ShaderPass } from "../three.js-dev/examples/jsm/postprocessing/ShaderPass.js";
+import * as THREE from "/three.js/build/three.module.js";
+import { ShaderPass } from "../three.js/Shaders_Postprocessing/postprocessing/ShaderPass.js";
 
 export default function Hyperdrive() {
 	// For hyperdrive
@@ -14,7 +14,7 @@ export default function Hyperdrive() {
 
 	this.particle_count = 100;
 
-	this.postprocessingEnabled = true;
+	this.postprocessingEnabled = false;
 
 	/**
 	 * Get a random number between 0 and 1.

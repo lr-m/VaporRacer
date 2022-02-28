@@ -1,4 +1,4 @@
-import * as THREE from "../three.js-dev/build/three.module.js";
+import * as THREE from "/three.js/build/three.module.js";
 
 export default function Car() {
 	this.car_mesh;
@@ -700,6 +700,13 @@ export default function Car() {
 		return [this.current_col, this.current_row];
 	};
 
+	this.getMeshPosition = function(){
+		if (this.car_mesh != undefined){
+			return this.car_mesh.position;
+		}
+		return 0;
+	}
+
 	/**
 	 * Updates the position of the car hit box by simply setting
 	 * rotation and position to the cars position and rotation.
@@ -726,4 +733,38 @@ export default function Car() {
 		const x = Math.sin(this.seed++) * 10000;
 		return x - Math.floor(x);
 	};
+
+	this.positionCheck = function(other_pos, direction){
+		if (direction == 3){
+			// Left
+			if (other_pos[0] == this.getPosition()[0] - 1 && other_pos[1] == this.getPosition()[1]){
+				return true;
+			}
+			return false;
+		}
+
+		if (direction == 1){
+			// Right
+			if (other_pos[0] == this.getPosition()[0] + 1 && other_pos[1] == this.getPosition()[1]){
+				return true;
+			}
+			return false;
+		}
+
+		if (direction == 0){
+			// Up
+			if (other_pos[0] == this.getPosition()[0] && other_pos[1] == this.getPosition()[1] + 1){
+				return true;
+			}
+			return false;
+		}
+
+		if (direction == 2){
+			// Down
+			if (other_pos[0] == this.getPosition()[0] && other_pos[1] == this.getPosition()[1] - 1){
+				return true;
+			}
+			return false;
+		}
+	}
 }

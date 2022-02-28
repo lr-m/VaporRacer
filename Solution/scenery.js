@@ -1,5 +1,5 @@
-import * as THREE from "../three.js-dev/build/three.module.js";
-import { ImprovedNoise } from "../three.js-dev/examples/jsm/math/ImprovedNoise.js";
+import * as THREE from "../three.js/build/three.module.js";
+import { ImprovedNoise } from "../three.js/Utilities/ImprovedNoise.js";
 
 export default function Scenery() {
   this.buildings = [];

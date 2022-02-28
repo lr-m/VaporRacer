@@ -30,27 +30,17 @@
 
     <div id="container"></div>
 
-    <body style="background-color:black;"></body>
-
-    <script type="importmap">
-			{
-				"imports": {
-					"three": "../three.js-dev/build/three.module.js"
-				}
-			}
-		</script>
-
     <script type="module">
-      import * as THREE from 'three';
+      import * as THREE from "/three.js/build/three.module.js";
 
-      import { GLTFLoader } from "../three.js-dev/examples/jsm/loaders/GLTFLoader.js";
-      import { ImprovedNoise } from "../three.js-dev/examples/jsm/math/ImprovedNoise.js";
-      import Stats from "../three.js-dev/examples/jsm/libs/stats.module.js";
+      import { GLTFLoader } from "../three.js/Utilities/GLTFLoader.js";
+      import { ImprovedNoise } from "../three.js/Utilities/ImprovedNoise.js";
+      import Stats from "../three.js/Utilities/stats.module.js";
 
-      import { EffectComposer } from "../three.js-dev/examples/jsm/postprocessing/EffectComposer.js";
-      import { RenderPass } from "../three.js-dev/examples/jsm/postprocessing/RenderPass.js";
-      import { UnrealBloomPass } from "../three.js-dev/examples/jsm/postprocessing/UnrealBloomPass.js";
-      import { ShaderPass } from "../three.js-dev/examples/jsm/postprocessing/ShaderPass.js";
+      import { EffectComposer } from "../three.js/Shaders_Postprocessing/postprocessing/EffectComposer.js";
+      import { RenderPass } from "../three.js/Shaders_Postprocessing/postprocessing/RenderPass.js";
+      import { UnrealBloomPass } from "../three.js/Shaders_Postprocessing/postprocessing/UnrealBloomPass.js";
+      import { ShaderPass } from "../three.js/Shaders_Postprocessing/postprocessing/ShaderPass.js";
 
       import Dash from "./dash.js";
       import Menu from "./menu.js";
@@ -71,6 +61,7 @@
 
       // Car meshes
       var car_mesh, smashed_car_mesh, engine_mesh;
+      var car_mesh_2, smashed_car_mesh_2, engine_mesh_2;
 
       // Obstacles/scenery
       var planet_meshes = [];
@@ -103,15 +94,15 @@
 
       // For mouse controls
       var mouse_controls = false;
-      var stats;
+      //var stats;
 
       // Object instances
-      var dash, menu, scenery, hyperdrive, obstacles, car;
+      var dash, menu, scenery, hyperdrive, obstacles, car, car_2;
 
       var godmode = false; // For marker so they can see everything
 
       // For postprocessing
-      var postprocessingEnabled = true;
+      var postprocessingEnabled = false;
       var bloomPass, crtPass;
 
       init();
@@ -127,9 +118,11 @@
         document.addEventListener("mousedown", onMouseDown, false);
         window.addEventListener("resize", onWindowResize);
 
+        THREE.Cache.enabled = true;
+
         // For FPS counter
-        stats = Stats();
-        document.body.appendChild(stats.dom);
+        // stats = Stats();
+        // document.body.appendChild(stats.dom);
 
         // Get container
         container = document.getElementById("container");
@@ -189,7 +182,10 @@
 
         // Initialise the player
         car = new Car();
+        car_2 = new Car();
+
         car.initialise(scene);
+        car_2.initialise(scene);
 
         // Initialise postprocessing
         initialisePostProcessing();
@@ -207,16 +203,15 @@
         // Set the beginning time for mode changes
         last_time = Math.round(new Date().getTime() / 1000);
 
-        // Add postprocessing passes
-        composer.addPass(bloomPass);
-        composer.addPass(crtPass);
+        car_2.moveRight();
+        car.moveLeft();
       }
 
       /**
        * Function that handles the animation and movement of objects.
        */
       function animate() {
-        stats.update();
+        //stats.update();
 
         // Get the animation frame
         requestAnimationFrame(animate);
@@ -229,14 +224,16 @@
                 scene,
                 asteroid_mesh
               );
+
               car.initialiseMeshes(car_mesh, smashed_car_mesh, engine_mesh);
+              car_2.initialiseMeshes(car_mesh_2, smashed_car_mesh_2, engine_mesh_2);
             }
 
             // Update dash and camera positions
             dash.update(
               car.getSpeed(),
               score,
-              car_mesh.position.x,
+              0,
               hyperdrive.getCurrentCharge(),
               hyperdrive.getFullCharge()
             );
@@ -249,13 +246,13 @@
               car_cam_y_rotation_offset =
                 car_cam_y_offset * Math.sin(car_mesh.rotation.z + Math.PI / 2);
 
-              camera.position.x =
-                car_mesh.position.x + car_cam_x_rotation_offset;
-              camera.position.y =
-                car_mesh.position.y + car_cam_y_rotation_offset;
+              // camera.position.x =
+              //   car_mesh.position.x + car_cam_x_rotation_offset;
+              // camera.position.y =
+              //   car_mesh.position.y + car_cam_y_rotation_offset;
             } else {
-              camera.position.x = car_mesh.position.x;
-              camera.position.y = current_camera_y;
+              // camera.position.x = car_mesh.position.x;
+              // camera.position.y = current_camera_y;
 
               if (current_camera_y == 1000 && current_camera_z == 0) {
                 camera.lookAt(camera.position.x, 950, -5000);
@@ -281,12 +278,14 @@
                 }
 
                 car.verticalMovement();
+                car_2.verticalMovement();
               } else { // Not in hyperdrive
                 camera.lookAt(camera.position.x, 950, -5000);
 
                 car.move();
+                car_2.move();
 
-                if (!godmode && car.collisionDetection(obstacles) && !game_over)
+                if (!godmode && (car.collisionDetection(obstacles) || car_2.collisionDetection(obstacles)) && !game_over)
                   gameOver();
 
                 obstacles.move(
@@ -305,6 +304,8 @@
               }
 
               car.rearParticles();
+              car_2.rearParticles();
+
               scenery.move(scene, car.getSpeed());
 
               last_time = obstacles.modeChanges(last_time, hyperdrive);
@@ -314,6 +315,7 @@
               obstacles.rotateObjects();
               menu.moveIn();
               car.afterHitPhysics();
+              car_2.afterHitPhysics();
             }
           }
 
@@ -423,9 +425,11 @@
       function keyControls() {
         document.onkeydown = function (e) {
           switch (e.keyCode) {
+            // First car movement
             case 37: // Move left
               if (
                 !hyperdrive.isActive() &&
+                !car.positionCheck(car_2.getPosition(), 3) &&
                 car.moveLeft() &&
                 !menu.isPaused() &&
                 !menu.isActive()
@@ -435,6 +439,7 @@
             case 39: // Move right
               if (
                 !hyperdrive.isActive() &&
+                !car.positionCheck(car_2.getPosition(), 1) &&
                 car.moveRight() &&
                 !menu.isPaused() &&
                 !menu.isActive()
@@ -444,9 +449,11 @@
             case 38: // Move up
               if (
                 !hyperdrive.isActive() &&
+                !car.positionCheck(car_2.getPosition(), 0) &&
                 car.moveUp() &&
                 !menu.isPaused() &&
                 !menu.isActive()
+                
               ) {
                 ver_change.play();
                 if (car_front_camera) current_camera_y += car.getHeightSep();
@@ -455,6 +462,7 @@
             case 40: // Move down
               if (
                 !hyperdrive.isActive() &&
+                !car.positionCheck(car_2.getPosition(), 2) && 
                 car.moveDown() &&
                 !menu.isPaused() &&
                 !menu.isActive()
@@ -528,6 +536,53 @@
               } else if (!menu.isPaused() && hyperdrive.isActive()) {
                 hyper_during.play();
               }
+
+            // Second car movement
+            case 65: // Move left
+              if (
+                !hyperdrive.isActive() &&
+                !car_2.positionCheck(car.getPosition(), 3) &&
+                car_2.moveLeft() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+              )
+                hor_change.play();
+              break;
+            case 68: // Move right
+              if (
+                !hyperdrive.isActive() &&
+                !car_2.positionCheck(car.getPosition(), 1) &&
+                car_2.moveRight() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+              )
+                hor_change.play();
+              break;
+            case 87: // Move up
+              if (
+                !hyperdrive.isActive() &&
+                !car_2.positionCheck(car.getPosition(), 0) &&
+                car_2.moveUp() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+                
+              ) {
+                ver_change.play();
+                if (car_front_camera) current_camera_y += car.getHeightSep();
+              }
+              break;
+            case 83: // Move down
+              if (
+                !hyperdrive.isActive() &&
+                !car_2.positionCheck(car.getPosition(), 2) && 
+                car_2.moveDown() &&
+                !menu.isPaused() &&
+                !menu.isActive()
+              ) {
+                ver_change.play();
+                if (car_front_camera) current_camera_y -= car.getHeightSep();
+              }
+              break;
           }
         };
       }
@@ -625,6 +680,7 @@
         hyperdrive.clearCharge();
 
         car.reset(scene);
+        car_2.reset(scene);
 
         score = 0;
 
@@ -647,6 +703,9 @@
 
         // Reset time
         last_time = Math.round(new Date().getTime() / 1000);
+
+        car.moveRight();
+        car_2.moveLeft();
       }
 
       /**
@@ -670,6 +729,7 @@
         dash.updateStatus("GAME OVER");
 
         car.hit(scene);
+        car_2.hit(scene);
 
         // Switch to overhead camera view
         if (car_front_camera) switchToOverheadView();
@@ -809,6 +869,30 @@
           }
         );
 
+        // Load the 2nd car mesh
+        modelLoader.load(
+          "../Assets/Models/car.glb",
+          function (gltf) {
+            car_mesh_2 = gltf.scene.children.find(
+              (child) => child.name === "Car"
+            );
+            car_mesh_2.scale.set(
+              car_mesh_2.scale.x * 200,
+              car_mesh_2.scale.y * 200,
+              car_mesh_2.scale.z * 200
+            );
+            car_mesh_2.position.y = 375;
+            car_mesh_2.position.z = 1000;
+            car_mesh_2.name = "Car_mesh";
+
+            scene.add(car_mesh_2);
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
         // Load the asteroid mesh
         modelLoader.load(
           "../Assets/Models/asteroid.glb",
@@ -854,6 +938,30 @@
           }
         );
 
+        // Load the 2nd smashed car mesh
+        modelLoader.load(
+          "../Assets/Models/smashed.glb",
+          function (gltf) {
+            smashed_car_mesh_2 = gltf.scene.children.find(
+              (child) => child.name === "Car"
+            );
+            smashed_car_mesh_2.scale.set(
+              smashed_car_mesh_2.scale.x * 200,
+              smashed_car_mesh_2.scale.y * 200,
+              smashed_car_mesh_2.scale.z * 200
+            );
+            smashed_car_mesh_2.visible = false;
+            smashed_car_mesh_2.name = "Smashed Car Mesh";
+            smashed_car_mesh_2.position.z = 10000;
+
+            scene.add(smashed_car_mesh_2);
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
         // Load the car engine mesh
         modelLoader.load(
           "../Assets/Models/engine.glb",
@@ -867,6 +975,26 @@
               engine_mesh.scale.z * 200
             );
             engine_mesh.name = "Engine Mesh";
+          },
+          undefined,
+          function (error) {
+            console.error(error);
+          }
+        );
+
+        // Load the car engine mesh
+        modelLoader.load(
+          "../Assets/Models/engine.glb",
+          function (gltf) {
+            engine_mesh_2 = gltf.scene.children.find(
+              (child) => child.name === "Engine"
+            );
+            engine_mesh_2.scale.set(
+              engine_mesh_2.scale.x * 200,
+              engine_mesh_2.scale.y * 200,
+              engine_mesh_2.scale.z * 200
+            );
+            engine_mesh_2.name = "Engine Mesh";
           },
           undefined,
           function (error) {
